@@ -35,6 +35,7 @@ import random
 from enum import Enum
 import colorsys
 import datetime
+import queue
 try:
     import RPi.GPIO as GPIO
 except Exception:
@@ -171,9 +172,10 @@ class ZiGate(object):
 
     def __init__(self, port='auto', path='~/.zigate.json',
                  auto_start=True,
-                 auto_save=True,
+                 auto_save=False,
                  channel=None,
                  adminpanel=False):
+        self.received_interpreted_response = queue.Queue(maxsize=1)
         self._model = 'TTL'  # TTL, WiFI, DIN, GPIO
         self._devices = {}
         self._groups = {}
@@ -308,6 +310,7 @@ class ZiGate(object):
 
     def setup_connection(self):
         self.connection = ThreadSerialConnection(self, self._port)
+        
 
     def close(self):
         self._closing = True
@@ -676,6 +679,13 @@ class ZiGate(object):
                     response['data'] = 'unsupported'
                 else:
                     return
+            if (response.msg == 0x8100 and response['addr'] == self.get_addr(list(self._devices.values())[0].ieee)):
+                if self.received_interpreted_response.empty():
+                    self.received_interpreted_response.put(response["data"])
+                else:
+                    self.received_interpreted_response.get()
+                    self.received_interpreted_response.put(response["data"])
+
             # ignore if related to zigate
             if response['addr'] == self.addr:
                 return
